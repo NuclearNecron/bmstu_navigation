@@ -20,8 +20,8 @@ class NewAccessSchema(Schema):
 
 
 class NewUserAccessSchema(Schema):
-    user = fields.Int(required=True)
-    role = fields.Int(reqired=True)
+    user_id = fields.Int(required=True)
+    role_id = fields.Int(reqired=True)
 
 
 class UpdUserSchema(Schema):

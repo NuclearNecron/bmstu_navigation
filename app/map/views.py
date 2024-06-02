@@ -27,15 +27,18 @@ from app.user.dataclasses import KEY_TYPES
 class NavigateView(CorsViewMixin, View):
     async def get(self):
         if not self.store.map.working:
-            raise HTTPServiceUnavailable
-        start_id = int(self.request.query.get("start_id"))
-        target_id = int(self.request.query.get("target_id"))
+            raise HTTPServiceUnavailable(reason="Модуль навигации еще не запущен. Запустите навигатор и попробуйте снова.")
+        try:
+            start_id = int(self.request.query.get("start_id"))
+            target_id = int(self.request.query.get("target_id"))
+        except:
+            raise HTTPBadRequest(resaon="Не указаны необходимые параметры") 
         if not start_id or not target_id:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Не указаны необходимые параметры")
         start_node = await self.store.mapAPI.get_node_by_id(start_id)
         target_node = await self.store.mapAPI.get_node_by_id(target_id)
         if (start_node is None) or (target_node is None):
-            raise HTTPNotFound
+            raise HTTPNotFound(resaon="Не существует указанной зоны")
         route = await self.store.map.navigate_main(start_id, target_id)
         return json_response(
             data={
@@ -62,14 +65,14 @@ class TypeView(CorsViewMixin, View):
         except:
             page = int(self.request.query.get("page", 1))
             if page < 1:
-                raise HTTPBadRequest
+                raise HTTPBadRequest(resaon="Неверный параметр")
             unlimited = int(self.request.query.get("unlimited", 0))
             if unlimited == 1:
                 types = await self.store.mapAPI.get_all_types(page=None,limit=None)
             else:
                 types = await self.store.mapAPI.get_all_types(page=page, limit=10)
             if not types:
-                raise HTTPNotFound
+                raise HTTPNotFound(resaon="Вы вышли за границы списка")
             return json_response(
                 data=[
                     {
@@ -84,7 +87,7 @@ class TypeView(CorsViewMixin, View):
             )
         search_type = await self.store.mapAPI.get_type_by_id(type_id)
         if search_type is None:
-            raise HTTPNotFound
+            raise HTTPNotFound(resaon="Не существует")
         return json_response(
             data={
                 "id": search_type.id,
@@ -98,14 +101,14 @@ class TypeView(CorsViewMixin, View):
     @request_schema(NewTypeSchema)
     async def post(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(resaon="Нет авторизации")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (KEY_TYPES.ADMIN not in roles) and (KEY_TYPES.OWNER not in roles):
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         new_type = await self.store.mapAPI.createType(
             name=self.data["name"],
             shortname=self.data["shortname"],
@@ -113,7 +116,7 @@ class TypeView(CorsViewMixin, View):
             description=self.data.get("description"),
         )
         if new_type is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Ошибка при создании")
         if self.store.map.working:
             await self.store.map.add_type(new_type)
         return json_response(
@@ -129,21 +132,21 @@ class TypeView(CorsViewMixin, View):
     @request_schema(UpdTypeSchema)
     async def put(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(resaon="Вы не авторизованы")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (KEY_TYPES.ADMIN not in roles) and (KEY_TYPES.OWNER not in roles):
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         try:
             type_id = int(self.request.rel_url.name)
         except:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Не указан тип")
         search_type = await self.store.mapAPI.get_type_by_id(type_id)
         if search_type is None:
-            raise HTTPNotFound
+            raise HTTPNotFound(resaon="Нет такого типа")
         if self.data.get("name"):
             search_type.name = self.data.get("name")
         if self.data.get("description"):
@@ -157,7 +160,7 @@ class TypeView(CorsViewMixin, View):
             description=search_type.description,
         )
         if upd_type is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest("Ошибка при изменении")
         if self.store.map.working:
             await self.store.map.change_type(upd_type)
         return json_response(
@@ -172,24 +175,24 @@ class TypeView(CorsViewMixin, View):
 
     async def delete(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(resaon="Вы не авторизованы")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (KEY_TYPES.ADMIN not in roles) and (KEY_TYPES.OWNER not in roles):
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         try:
             type_id = int(self.request.rel_url.name)
         except:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Нет указан ресурс")
         search_type = await self.store.mapAPI.get_type_by_id(type_id)
         if search_type is None:
-            raise HTTPNotFound
+            raise HTTPNotFound(resaon="Указанный ресурс не существует")
         result = await self.store.mapAPI.deleteType(type_id)
         if not result:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Ошибка при удалении")
         if self.store.map.working:
             await self.store.map.delete_type(type_id)
         return json_response(data={"result": "Успешное удаление"})
@@ -202,14 +205,14 @@ class NodeView(CorsViewMixin, View):
         except:
             page = int(self.request.query.get("page", 1))
             if page < 1:
-                raise HTTPBadRequest
+                raise HTTPBadRequest(resaon="Неправильный парметр")
             node_type = int(self.request.query.get("type", 0))
             if node_type < 0:
-                raise HTTPBadRequest
+                raise HTTPBadRequest(resaon="Неправильный параметр")
             unlimited = int(self.request.query.get("unlimited", 0))
             parent = int(self.request.query.get("parent_node", 0))
             if parent < 0:
-                raise HTTPBadRequest
+                raise HTTPBadRequest(resaon="Неправлиьный параметр")
             if unlimited == 1:
                 nodes = await self.store.mapAPI.get_all_nodes(page=None,limit=None)
             elif node_type:
@@ -219,8 +222,8 @@ class NodeView(CorsViewMixin, View):
             else:
                 nodes = await self.store.mapAPI.get_all_nodes(page=page, limit=10)
             if not nodes:
-                raise HTTPNotFound
-            if self.request.user:
+                raise HTTPNotFound(resaon="Вы вышли за пределы списка зон")
+            try:
                 user = self.request.user
                 acceses = await self.store.userAPI.get_user_accesses(user.id)
                 roles = [access.access_id.name for access in acceses.roles]
@@ -255,7 +258,8 @@ class NodeView(CorsViewMixin, View):
                             ]
                         }
                     )
-            return json_response(
+            except:
+                return json_response(
                 data={
                     "nodes": [
                         {
@@ -272,7 +276,7 @@ class NodeView(CorsViewMixin, View):
             )
         target_node = await self.store.mapAPI.get_node_by_id(node_id)
         if target_node is None:
-            raise HTTPNotFound
+            raise HTTPNotFound(resaon="Не существует запрашиваемого ресурса")
         node_type = await self.store.mapAPI.get_type_by_id(target_node.type_id)
         if self.request.user:
             user = self.request.user
@@ -328,14 +332,14 @@ class NodeView(CorsViewMixin, View):
     @request_schema(NewNodeSchema)
     async def post(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(resaon="Вы не авторизованы")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Дотсуп к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (KEY_TYPES.ADMIN not in roles) and (KEY_TYPES.OWNER not in roles):
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         new_node = await self.store.mapAPI.createNode(
             name=self.data["name"],
             shortname=self.data["shortname"],
@@ -348,7 +352,7 @@ class NodeView(CorsViewMixin, View):
             z_cord=self.data["z"],
         )
         if new_node is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Ошибка при создании")
         if self.store.map.working:
             await self.store.map.add_node(new_node)
         return json_response(
@@ -376,25 +380,25 @@ class NodeView(CorsViewMixin, View):
     @request_schema(UpdNodeSchema)
     async def put(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(resaon="Вы не авторизованы")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (
             (KEY_TYPES.ADMIN not in roles)
             and (KEY_TYPES.OWNER not in roles)
             and (KEY_TYPES.EDITOR not in roles)
         ):
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         try:
             node_id = int(self.request.rel_url.name)
         except:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Не указан запрашиваеемый ресурс")
         old_node = await self.store.mapAPI.get_node_by_id(node_id)
         if old_node is None:
-            raise HTTPNotFound
+            raise HTTPNotFound(resaon="Запрашиваемый ресурс не существует")
         if self.data.get("name"):
             old_node.name = self.data.get("name")
         if self.data.get("description"):
@@ -418,7 +422,7 @@ class NodeView(CorsViewMixin, View):
             z_cord=old_node.z_cord,
         )
         if upd_node is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Ошибка при обновлении")
         if self.store.map.working:
             await self.store.map.change_node(upd_node)
         return json_response(
@@ -445,24 +449,24 @@ class NodeView(CorsViewMixin, View):
 
     async def delete(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(resaon="Вы не авторизованы")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (KEY_TYPES.ADMIN not in roles) and (KEY_TYPES.OWNER not in roles):
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         try:
             node_id = int(self.request.rel_url.name)
         except:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Запрашиваемый ресурс не указан")
         search_node = await self.store.mapAPI.get_node_by_id(node_id)
         if search_node is None:
-            raise HTTPNotFound
+            raise HTTPNotFound(resaon="Запрашиваемый ресурс не существует")
         result = await self.store.mapAPI.deleteNode(node_id)
         if not result:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Ошибка при удалении")
         if self.store.map.working:
             await self.store.map.delete_node(node_id)
         return json_response(data={"result": "Успешное удаление"})
@@ -475,10 +479,10 @@ class ConnectionView(CorsViewMixin, View):
         except:
             page = int(self.request.query.get("page", 1))
             if page < 1:
-                raise HTTPBadRequest
+                raise HTTPBadRequest(resaon="Неверный параметр")
             node = int(self.request.query.get("node", 0))
             if node < 0:
-                raise HTTPBadRequest
+                raise HTTPBadRequest(resaon="Неверный параметр")
             unlimited = int(self.request.query.get("unlimited", 0))
             if unlimited == 1:
                 conns = await self.store.mapAPI.get_all_connections(page=None,limit=None)
@@ -487,7 +491,7 @@ class ConnectionView(CorsViewMixin, View):
             else:
                 conns = await self.store.mapAPI.get_all_connections(page=page, limit=10)
             if not conns:
-                raise HTTPNotFound
+                raise HTTPNotFound(resaon="Вы вышли за пределы списка соединений")
             return json_response(
                 data={
                     "connections": [
@@ -505,7 +509,7 @@ class ConnectionView(CorsViewMixin, View):
             )
         target_conn = await self.store.mapAPI.get_connection_by_id(conn_id)
         if target_conn is None:
-            raise HTTPNotFound
+            raise HTTPNotFound(resaon="Запрашиваемый ресурс не существует")
         node1 = await self.store.mapAPI.get_node_by_id(target_conn.node1_id)
         node2 = await self.store.mapAPI.get_node_by_id(target_conn.node2_id)
         if self.request.user:
@@ -591,16 +595,16 @@ class ConnectionView(CorsViewMixin, View):
     @request_schema(NewConnSchema)
     async def post(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(resaon="Вы не авторизованы")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к запрашиваемому ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (KEY_TYPES.ADMIN not in roles) and (KEY_TYPES.OWNER not in roles):
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к запрашиваемому ресурсу запрещен")
         if self.data["node1_id"] == self.data["node2_id"]:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon='''Соединение на "само себя" ''')
         new_conn = await self.store.mapAPI.createConnection(
             node1_id=self.data["node1_id"],
             node2_id=self.data["node2_id"],
@@ -609,7 +613,7 @@ class ConnectionView(CorsViewMixin, View):
             t_weight=self.data["t_weight"],
         )
         if new_conn is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Ошибка при создании")
         if self.store.map.working:
             await self.store.map.add_conn(new_conn)
         return json_response(
@@ -626,25 +630,25 @@ class ConnectionView(CorsViewMixin, View):
     @request_schema(UpdConnSchema)
     async def put(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(resaon="Вы не авторизованы")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (
             (KEY_TYPES.ADMIN not in roles)
             and (KEY_TYPES.OWNER not in roles)
             and (KEY_TYPES.EDITOR not in roles)
         ):
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         try:
             conn_id = int(self.request.rel_url.name)
         except:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Не указан запршиваемый ресурс")
         old_conn = await self.store.mapAPI.get_connection_by_id(conn_id)
         if old_conn is None:
-            raise HTTPNotFound
+            raise HTTPNotFound(resaon="Запрашиваемый ресурс не существует")
         if self.data.get("distance"):
             old_conn.distance = self.data.get("distance")
         if self.data.get("t_weight"):
@@ -658,7 +662,7 @@ class ConnectionView(CorsViewMixin, View):
             t_weight=old_conn.t_weight,
         )
         if upd_conn is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Ошибка при изменении")
         if self.store.map.working:
             await self.store.map.change_conn(upd_conn)
         return json_response(
@@ -674,24 +678,24 @@ class ConnectionView(CorsViewMixin, View):
 
     async def delete(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(resaon="Вы не авторизованы")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (KEY_TYPES.ADMIN not in roles) and (KEY_TYPES.OWNER not in roles):
-            raise HTTPForbidden
+            raise HTTPForbidden(resaon="Доступ к ресурсу запрещен")
         try:
             conn_id = int(self.request.rel_url.name)
         except:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Не указан запрашиваемый ресурс")
         seacrh_conn = await self.store.mapAPI.get_connection_by_id(conn_id)
         if seacrh_conn is None:
-            raise HTTPNotFound
+            raise HTTPNotFound(resaon="Запрашиваемый ресурс не существует")
         result = await self.store.mapAPI.deleteConnection(conn_id)
         if not result:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(resaon="Ошибка при удалении")
         if self.store.map.working:
             await self.store.map.delete_conn(conn_id,seacrh_conn.node1_id,seacrh_conn.node2_id)
         return json_response(data={"result": "Успешное удаление"})

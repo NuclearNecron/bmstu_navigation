@@ -29,9 +29,9 @@ from app.user.dataclasses import KEY_TYPES
 class UserLoginView(CorsViewMixin, View):
     @request_schema(UserSchema)
     async def post(self):
-        logindata = await self.store.userAPI.get_by_login(self.data["login"])
+        logindata = await self.store.userAPI.get_by_login(self.data.get("login"))
         if logindata is None:
-            raise HTTPForbidden
+                raise HTTPForbidden(reason="Неправильный логин пароль")
         user_data = {
             "id": logindata.id,
             "login": logindata.login,
@@ -42,7 +42,7 @@ class UserLoginView(CorsViewMixin, View):
             session = await new_session(request=self.request)
             session["user"] = user_data
             return json_response(data=user_data)
-        raise HTTPForbidden
+        raise HTTPForbidden(reason="Неправильный логин пароль")
 
 
 class UserCurrentView(AuthRequiredMixin, CorsViewMixin, View):
@@ -56,7 +56,7 @@ class UserCurrentView(AuthRequiredMixin, CorsViewMixin, View):
                     "surname": self.request.user.surname,
                 }
             )
-        raise HTTPUnauthorized
+        raise HTTPUnauthorized(reason="Ошибка проверки авторизации")
 
 
 class UserCreate(CorsViewMixin, View):
@@ -69,7 +69,7 @@ class UserCreate(CorsViewMixin, View):
             surname=self.data["surname"],
         )
         if user is None:
-            raise HTTPConflict
+            raise HTTPConflict(reason="Пользователь с таким логином уже существует")
         return json_response(
             data={
                 "id": user.id,
@@ -88,7 +88,7 @@ class UserCreate(CorsViewMixin, View):
                 surname=self.data.get("surname"),
             )
             if user is None:
-                raise HTTPConflict
+                raise HTTPConflict(reason="Ошибка смены данных")
             return json_response(
                 data={
                     "id": user.id,
@@ -97,23 +97,23 @@ class UserCreate(CorsViewMixin, View):
                     "surname": user.surname,
                 }
             )
-        raise HTTPUnauthorized
+        raise HTTPUnauthorized(reason="Ошибка проверки авторизации")
 
 
 class AccessView(AuthRequiredMixin, CorsViewMixin, View):
     @request_schema(NewAccessSchema)
     async def post(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(reason="Ошибка проверки авторизации")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(reason="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses]
         if (KEY_TYPES.ADMIN in roles) or (KEY_TYPES.OWNER in roles):
             new_access = await self.store.userAPI.create_access_class(self.data["name"])
             if new_access is None:
-                raise HTTPConflict
+                raise HTTPConflict(reason="Данные права были уже выданы")
             return json_response(
                 data={
                     "id": new_access.id,
@@ -121,13 +121,13 @@ class AccessView(AuthRequiredMixin, CorsViewMixin, View):
                 }
             )
         else:
-            raise HTTPForbidden
+            raise HTTPForbidden(reason="Доступ к ресурсу запрещен")
 
 
 class UserAccessView(AuthRequiredMixin, CorsViewMixin, View):
     async def get(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(reason="Ошибка проверки авторизации")
         user = self.request.user
         try:
             user_id = int(self.request.query["user_id"])
@@ -151,12 +151,12 @@ class UserAccessView(AuthRequiredMixin, CorsViewMixin, View):
 
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(reason="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (KEY_TYPES.ADMIN in roles) or (KEY_TYPES.OWNER in roles):
             searched_user = await self.store.userAPI.get_by_id(user_id)
             if searched_user is None:
-                raise HTTPNotFound
+                raise HTTPNotFound(reason="Такого пользователя не существует")
             acceses = await self.store.userAPI.get_user_accesses(searched_user.id)
             return json_response(
                 data={
@@ -183,31 +183,31 @@ class UserAccessView(AuthRequiredMixin, CorsViewMixin, View):
     @request_schema(NewUserAccessSchema)
     async def post(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(reason="Ошибка проверки авторизации")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(reason="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (KEY_TYPES.ADMIN not in roles) and (KEY_TYPES.OWNER not in roles):
-            raise HTTPForbidden
+            raise HTTPForbidden(reason="Доступ к ресурсу запрещен")
         search_user = await self.store.userAPI.get_by_id(self.data["user_id"])
         if search_user is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(reason="Такого пользователя не существует")
         search_role = await self.store.userAPI.get_role_by_id(self.data["role_id"])
         if search_role is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(reason="Такого уровня доступа не существует")
         if KEY_TYPES.OWNER not in roles:
             if (search_role.name == KEY_TYPES.OWNER) or (
                 search_role.name == KEY_TYPES.ADMIN
             ):
-                raise HTTPForbidden
+                raise HTTPForbidden(reason="Доступ к ресурсу запрещен")
             else:
                 new_access = await self.store.userAPI.create_access(
                     search_user.id, search_role.id
                 )
                 if new_access is None:
-                    raise HTTPBadRequest
+                    raise HTTPBadRequest(reason="Доступ уже был предоставлен")
                 else:
                     return json_response(
                         data={
@@ -222,7 +222,7 @@ class UserAccessView(AuthRequiredMixin, CorsViewMixin, View):
                 search_user.id, search_role.id
             )
             if new_access is None:
-                raise HTTPBadRequest
+                raise HTTPBadRequest(reason="Доступ уже был предоставлен")
             else:
                 return json_response(
                     data={
@@ -235,52 +235,52 @@ class UserAccessView(AuthRequiredMixin, CorsViewMixin, View):
 
     async def delete(self):
         if self.request.user is None:
-            raise HTTPUnauthorized
+            raise HTTPUnauthorized(reason="Ошибка проверки авторизации")
         user = self.request.user
         acceses = await self.store.userAPI.get_user_accesses(user.id)
         if acceses is None:
-            raise HTTPForbidden
+            raise HTTPForbidden(reason="Доступ к ресурсу запрещен")
         roles = [access.access_id.name for access in acceses.roles]
         if (KEY_TYPES.ADMIN not in roles) and (KEY_TYPES.OWNER not in roles):
-            raise HTTPForbidden
+            raise HTTPForbidden(reason="Доступ к ресурсу запрещен")
         try:
             user_id = int(self.request.query["user_id"])
         except:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(reason="Не указан пользователь")
         try:
             role_id = int(self.request.query["role_id"])
         except:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(reason="Не указан уровень доступа")
         search_user = await self.store.userAPI.get_by_id(user_id)
         if search_user is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(reason="Такого пользователя не существует")
         search_role = await self.store.userAPI.get_role_by_id(role_id)
         if search_role is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(reason="Такого уровня доступа не существует")
         selected_useracess = await self.store.userAPI.get_user_access(user_id, role_id)
         if selected_useracess is None:
-            raise HTTPBadRequest
+            raise HTTPBadRequest(reason="Данный дсотуп не был предоставлен пользователю")
         if KEY_TYPES.OWNER not in roles:
             if (
                 (search_role.name == KEY_TYPES.OWNER)
                 or (search_role.name == KEY_TYPES.ADMIN)
                 or (search_role.name == KEY_TYPES.USER)
             ):
-                raise HTTPForbidden
+                raise HTTPForbidden(reason="Доступ к ресурсу запрещен")
             else:
                 result = await self.store.userAPI.remove_access(user_id, role_id)
                 if not result:
-                    raise HTTPBadRequest
+                    raise HTTPBadRequest(reason="Ошибка при удалении")
                 else:
                     return json_response(data={"result": "Успешное удаление"})
         else:
             if (search_role.name == KEY_TYPES.OWNER) or (
                 search_role.name == KEY_TYPES.USER
             ):
-                raise HTTPForbidden
+                raise HTTPForbidden(reason="Доступ к ресурсу запрещен")
             else:
                 result = await self.store.userAPI.remove_access(user_id, role_id)
                 if not result:
-                    raise HTTPBadRequest
+                    raise HTTPBadRequest(reason="Ошибка при удалении")
                 else:
                     return json_response(data={"result": "Успешное удаление"})

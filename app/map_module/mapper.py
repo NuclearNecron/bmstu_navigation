@@ -225,7 +225,7 @@ class Map:
         return None
 
     async def delete_node(self, node_id: int):
-        for child in self.nodes[f"{node_id}"].children:
+        for child in self.nodes[f"{node_id}"].childrens:
             await self.delete_node(child)
         for node2_id, value in self.nodes[f"{node_id}"].conns.items():
             await self.delete_conn(value.id, node_id, node2_id)
@@ -234,7 +234,7 @@ class Map:
         return None
 
     async def delete_type(self, type_id: int):
-        for child in self.types[f"{type_id}"].children:
+        for child in self.types[f"{type_id}"].childrens:
             await self.delete_type(child)
         for node in self.types[f"{type_id}"].proto:
             await self.delete_node(node)

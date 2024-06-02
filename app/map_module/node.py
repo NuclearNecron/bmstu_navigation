@@ -64,8 +64,6 @@ class RouteNode:
         self.previous = previous
 
     def __lt__(self, other):
-        if self.target_distance != other.target_distance:
-            return self.target_distance < other.target_distance
-        if self.start_distance != other.start_distance:
-            return self.start_distance < other.start_distance
+        if self.target_distance+self.start_distance != other.target_distance+self.start_distance:
+            return self.target_distance+self.start_distance < other.target_distance+self.start_distance
         return self.current < other.current
